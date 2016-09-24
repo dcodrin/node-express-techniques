@@ -1,0 +1,12 @@
+# IntelliJ project files
+.idea
+*.iml
+out
+gen
+
+# node_modules
+node_modules
+
+#compiled files
+meadowlark-compiled.js
+meadowlark-compiled.js.map
