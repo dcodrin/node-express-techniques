@@ -16,6 +16,18 @@ var _formidable = require('formidable');
 
 var _formidable2 = _interopRequireDefault(_formidable);
 
+var _cookieParser = require('cookie-parser');
+
+var _cookieParser2 = _interopRequireDefault(_cookieParser);
+
+var _expressSession = require('express-session');
+
+var _expressSession2 = _interopRequireDefault(_expressSession);
+
+var _credentials = require('./credentials');
+
+var _credentials2 = _interopRequireDefault(_credentials);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 var app = (0, _express2.default)();
@@ -29,6 +41,11 @@ var helpers = {
         this._sections[name] = options.fn(this);
         return null;
     }
+};
+//api helpers
+var validateEmail = function validateEmail(email) {
+    var re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    return re.test(email);
 };
 
 //set up handlebars  view engine
@@ -47,9 +64,27 @@ app.use(_bodyParser2.default.urlencoded({ extended: true }));
 // parse application/json
 app.use(_bodyParser2.default.json());
 
+//parse cookies, pass cookie secret as argument
+app.use((0, _cookieParser2.default)(_credentials2.default.cookieSecret));
+
+app.use((0, _expressSession2.default)({
+    resave: false,
+    saveUninitialized: false,
+    secret: _credentials2.default.cookieSecret
+}));
+
 //test middleware
 app.use(function (req, res, next) {
     res.locals.showTests = app.get('env') !== 'production' && req.query.test === '1';
+    next();
+});
+
+//flash messages
+//NOTE: to display flash messages make sure to redirect after setting the message
+app.use(function (req, res, next) {
+    //if there's a flash message, transfer it to the context then clear it
+    res.locals.flash = req.session.flash;
+    delete req.session.flash;
     next();
 });
 
@@ -75,6 +110,24 @@ app.get('/tours/request-group-rate', function (req, res) {
 
 app.get('/newsletter', function (req, res) {
     res.render('newsletter', { csrf: 'CSRF token goes here' });
+});
+
+app.post('/newsletter', function (req, res) {
+    var _req$body = req.body;
+    var email = _req$body.email;
+    var name = _req$body.name;
+
+    if (!validateEmail(email)) {
+        if (req.xhr) {
+            return res.json({error: 'Invalid email address.'});
+        }
+        req.session.flash = {
+            type: 'danger',
+            intro: 'Validation error!',
+            message: 'The email address entered was not valid'
+        };
+        return res.redirect(303, '/newsletter/archive');
+    }
 });
 
 app.get('/contest/vacation-photo', function (req, res) {

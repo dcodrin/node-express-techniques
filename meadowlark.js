@@ -2,6 +2,10 @@ import express from 'express';
 import handlebars from'express-handlebars';
 import bodyParser from 'body-parser';
 import formidable from 'formidable';
+import cookieParser from 'cookie-parser';
+import expressSession from 'express-session';
+
+import credentials from './credentials';
 
 const app = express();
 
@@ -14,6 +18,11 @@ const helpers = {
         this._sections[name] = options.fn(this);
         return null;
     }
+};
+//api helpers
+const validateEmail = (email) => {
+    const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    return re.test(email);
 };
 
 //set up handlebars  view engine
@@ -32,9 +41,27 @@ app.use(bodyParser.urlencoded({extended: true}));
 // parse application/json
 app.use(bodyParser.json());
 
+//parse cookies, pass cookie secret as argument
+app.use(cookieParser(credentials.cookieSecret));
+
+app.use(expressSession({
+    resave: false,
+    saveUninitialized: false,
+    secret: credentials.cookieSecret
+}));
+
 //test middleware
 app.use((req, res, next) => {
     res.locals.showTests = app.get('env') !== 'production' && req.query.test === '1';
+    next();
+});
+
+//flash messages
+//NOTE: to display flash messages make sure to redirect after setting the message
+app.use((req, res, next) => {
+    //if there's a flash message, transfer it to the context then clear it
+    res.locals.flash = req.session.flash;
+    delete req.session.flash;
     next();
 });
 
@@ -63,6 +90,21 @@ app.get('/newsletter', (req, res) => {
     res.render('newsletter', {csrf: 'CSRF token goes here'});
 });
 
+app.post('/newsletter', (req, res) => {
+    const {email, name} = req.body;
+    if (!validateEmail(email)) {
+        if (req.xhr) {
+            return res.json({error: 'Invalid email address.'});
+        }
+        req.session.flash = {
+            type: 'danger',
+            intro: 'Validation error!',
+            message: 'The email address entered was not valid'
+        };
+        return res.redirect(303, '/newsletter/archive');
+    }
+});
+
 app.get('/contest/vacation-photo', (req, res) => {
     const now = new Date();
     res.render('contest/vacation-photo', {year: now.getUTCFullYear(), month: now.getMonth()});
@@ -77,9 +119,9 @@ app.post('/process', (req, res) => {
 });
 
 app.post('/contest/vacation-photo/:year/:month', (req, res) => {
-   const form = new formidable.IncomingForm();
+    const form = new formidable.IncomingForm();
     form.parse(req, (err, fields, files) => {
-        if(err) {
+        if (err) {
             return res.redirect(303, '/error');
         }
         console.log('Received fields:');
