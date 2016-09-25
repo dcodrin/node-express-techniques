@@ -6,16 +6,65 @@ import cookieParser from 'cookie-parser';
 import expressSession from 'express-session';
 import morgan from 'morgan';
 import cluster from 'cluster';
+import {create} from 'domain';
 
 import credentials from './credentials';
 
 const app = express();
+
+// handle uncaught errors
+app.use((req, res, next) => {
+    // create domain fro request
+    const domain = create();
+    // handle errors on domain
+    domain.on('error', (err) => {
+        console.error('DOMAIN ERROR CAUGHT\n', err.stack);
+
+        try {
+            // failsafe shutdown in 5 seconds
+            setTimeout(() => {
+                console.error('Failsafe shutdown.');
+                process.exit(1);
+            }, 5000);
+
+            //disconnect from cluster
+            const worker = cluster.worker;
+            if (worker) {
+                worker.disconnect();
+            }
+
+            // stop taking new requests
+            startServer().close();
+
+            try {
+                // attempt to use Express error route
+                next(err);
+            } catch (err) {
+                // if Express error route fails try Node response
+                console.error('Express error route failed\n', err.stack);
+                res.status(500);
+                res.setHeader('content-tpe', 'text/plain');
+                res.end('Server error');
+            }
+        } catch (err) {
+            console.error('Unable to send 500 response.\n', err.stack);
+        }
+    });
+
+    // add the req and res objects to the domain
+    domain.add(req);
+    domain.add(res);
+
+    // execute the rest of the request chain
+    domain.run(next);
+});
 
 //cluster middleware to check which worker is handling request
 app.use((req, res, next) => {
     if (cluster.isWorker) {
         console.log(`Worker ${cluster.worker.id} received request.`)
     }
+    next();
 });
 
 //handlebars helpers
@@ -81,6 +130,11 @@ app.get('/', (req, res) => {
 });
 
 app.get('/about', (req, res) => {
+
+    // Use to test domain uncaught error handling
+    // setImmediate(() => {
+    //     throw new Error('KABOOM!')
+    // });
     res.render('about', {pageTestScript: '/qa/tests-about.js'});
 });
 
@@ -163,7 +217,7 @@ app.use((err, req, res, next) => {
 });
 
 const startServer = () => {
-    app.listen(app.get('port'), () => {
+    return app.listen(app.get('port'), () => {
         console.log('Express started in ' + app.get('env') + ' mode on http://localhost:' + app.get('port') + ';'); // eslint-disable-line no-console
     });
 };

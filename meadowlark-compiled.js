@@ -32,6 +32,8 @@ var _cluster = require('cluster');
 
 var _cluster2 = _interopRequireDefault(_cluster);
 
+var _domain = require('domain');
+
 var _credentials = require('./credentials');
 
 var _credentials2 = _interopRequireDefault(_credentials);
@@ -40,11 +42,59 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 var app = (0, _express2.default)();
 
+// handle uncaught errors
+app.use(function (req, res, next) {
+    // create domain fro request
+    var domain = (0, _domain.create)();
+    // handle errors on domain
+    domain.on('error', function (err) {
+        console.error('DOMAIN ERROR CAUGHT\n', err.stack);
+
+        try {
+            // failsafe shutdown in 5 seconds
+            setTimeout(function () {
+                console.error('Failsafe shutdown.');
+                process.exit(1);
+            }, 5000);
+
+            //disconnect from cluster
+            var worker = _cluster2.default.worker;
+            if (worker) {
+                worker.disconnect();
+            }
+
+            // stop taking new requests
+            startServer().close();
+
+            try {
+                // attempt to use Express error route
+                next(err);
+            } catch (err) {
+                // if Express error route fails try Node response
+                console.error('Express error route failed\n', err.stack);
+                res.status(500);
+                res.setHeader('content-tpe', 'text/plain');
+                res.end('Server error');
+            }
+        } catch (err) {
+            console.error('Unable to send 500 response.\n', err.stack);
+        }
+    });
+
+    // add the req and res objects to the domain
+    domain.add(req);
+    domain.add(res);
+
+    // execute the rest of the request chain
+    domain.run(next);
+});
+
 //cluster middleware to check which worker is handling request
 app.use(function (req, res, next) {
     if (_cluster2.default.isWorker) {
         console.log('Worker ' + _cluster2.default.worker.id + ' received request.');
     }
+    next();
 });
 
 //handlebars helpers
@@ -110,6 +160,11 @@ app.get('/', function (req, res) {
 });
 
 app.get('/about', function (req, res) {
+
+    // Use to test domain uncaught error handling
+    // setImmediate(() => {
+    //     throw new Error('KABOOM!')
+    // });
     res.render('about', { pageTestScript: '/qa/tests-about.js' });
 });
 
@@ -193,7 +248,7 @@ app.use(function (err, req, res, next) {
 });
 
 var startServer = function startServer() {
-    app.listen(app.get('port'), function () {
+    return app.listen(app.get('port'), function () {
         console.log('Express started in ' + app.get('env') + ' mode on http://localhost:' + app.get('port') + ';'); // eslint-disable-line no-console
     });
 };
