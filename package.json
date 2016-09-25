@@ -4,7 +4,7 @@
   "description": "This is a demo website build with node and express for a fictional travel company.",
   "main": "meadowlark.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "grunt",
     "dev": "nodemon meadowlark.js --exec babel-node --presets es2015,stage-0",
     "start": "node meadowlark-compiled.js"
   },
@@ -29,6 +29,7 @@
     "grunt": "^1.0.1",
     "grunt-cafe-mocha": "^0.1.13",
     "grunt-link-checker": "^0.2.0",
+    "loadtest": "^2.0.3",
     "mocha": "^3.0.2",
     "morgan": "^1.7.0",
     "nodemon": "^1.10.2",
