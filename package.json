@@ -1,7 +1,7 @@
 {
   "name": "meadowlark_travel",
   "version": "1.0.0",
-  "description": "This is a demo website build with node and express for a fictional travel company.",
+  "description": "This is a demo of some of the techniques used in Node and Express. The demo is based on a fictional travel company.",
   "main": "meadowlark.js",
   "scripts": {
     "test": "grunt",
