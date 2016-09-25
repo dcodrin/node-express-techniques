@@ -4,7 +4,9 @@
   "description": "This is a demo website build with node and express for a fictional travel company.",
   "main": "meadowlark.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon meadowlark.js --exec babel-node --presets es2015,stage-0",
+    "start": "node meadowlark-compiled.js"
   },
   "keywords": [
     "node",
@@ -13,11 +15,20 @@
   "author": "Codrin Diaconu",
   "license": "ISC",
   "dependencies": {
+    "body-parser": "^1.15.2",
     "express": "^4.14.0",
-    "express-handlebars": "^3.0.0"
+    "express-handlebars": "^3.0.0",
+    "formidable": "^1.0.17"
   },
   "devDependencies": {
     "babel-preset-es2015": "^6.14.0",
-    "nodemon": "^1.10.2"
+    "babel-preset-stage-0": "^6.5.0",
+    "chai": "^3.5.0",
+    "grunt": "^1.0.1",
+    "grunt-cafe-mocha": "^0.1.13",
+    "grunt-link-checker": "^0.2.0",
+    "mocha": "^3.0.2",
+    "nodemon": "^1.10.2",
+    "zombie": "^4.2.1"
   }
 }
