@@ -1,8 +1,8 @@
 {
-  "name": "meadowlark_travel",
+  "name": "node-express-techniques",
   "version": "1.0.0",
   "description": "This is a demo of some of the techniques used in Node and Express. The demo is based on a fictional travel company.",
-  "main": "meadowlark.js",
+  "main": "meadowlark-compiled.js",
   "scripts": {
     "test": "grunt",
     "dev": "nodemon meadowlark.js --exec babel-node --presets es2015,stage-0",
