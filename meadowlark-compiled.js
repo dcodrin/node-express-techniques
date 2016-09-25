@@ -24,6 +24,14 @@ var _expressSession = require('express-session');
 
 var _expressSession2 = _interopRequireDefault(_expressSession);
 
+var _morgan = require('morgan');
+
+var _morgan2 = _interopRequireDefault(_morgan);
+
+var _cluster = require('cluster');
+
+var _cluster2 = _interopRequireDefault(_cluster);
+
 var _credentials = require('./credentials');
 
 var _credentials2 = _interopRequireDefault(_credentials);
@@ -31,6 +39,13 @@ var _credentials2 = _interopRequireDefault(_credentials);
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 var app = (0, _express2.default)();
+
+//cluster middleware to check which worker is handling request
+app.use(function (req, res, next) {
+    if (_cluster2.default.isWorker) {
+        console.log('Worker ' + _cluster2.default.worker.id + ' received request.');
+    }
+});
 
 //handlebars helpers
 var helpers = {
@@ -87,6 +102,8 @@ app.use(function (req, res, next) {
     delete req.session.flash;
     next();
 });
+
+app.use((0, _morgan2.default)('dev'));
 
 app.get('/', function (req, res) {
     res.render('home');
@@ -175,8 +192,19 @@ app.use(function (err, req, res, next) {
     res.status(500).render('500');
 });
 
-app.listen(app.get('port'), function () {
-    console.log('Express started on http://localhost:' + app.get('port') + ';'); // eslint-disable-line no-console
-});
+var startServer = function startServer() {
+    app.listen(app.get('port'), function () {
+        console.log('Express started in ' + app.get('env') + ' mode on http://localhost:' + app.get('port') + ';'); // eslint-disable-line no-console
+    });
+};
+
+// check to see if module is run directly as node meadowlark.js or is required in another module
+if (require.main === module) {
+    // app is run directly, run server
+    startServer();
+} else {
+    // app is imported from another file via require
+    module.exports = startServer;
+}
 
 //# sourceMappingURL=meadowlark-compiled.js.map

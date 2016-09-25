@@ -4,10 +4,19 @@ import bodyParser from 'body-parser';
 import formidable from 'formidable';
 import cookieParser from 'cookie-parser';
 import expressSession from 'express-session';
+import morgan from 'morgan';
+import cluster from 'cluster';
 
 import credentials from './credentials';
 
 const app = express();
+
+//cluster middleware to check which worker is handling request
+app.use((req, res, next) => {
+    if (cluster.isWorker) {
+        console.log(`Worker ${cluster.worker.id} received request.`)
+    }
+});
 
 //handlebars helpers
 const helpers = {
@@ -64,6 +73,8 @@ app.use((req, res, next) => {
     delete req.session.flash;
     next();
 });
+
+app.use(morgan('dev'));
 
 app.get('/', (req, res) => {
     res.render('home');
@@ -151,7 +162,17 @@ app.use((err, req, res, next) => {
     res.status(500).render('500');
 });
 
+const startServer = () => {
+    app.listen(app.get('port'), () => {
+        console.log('Express started in ' + app.get('env') + ' mode on http://localhost:' + app.get('port') + ';'); // eslint-disable-line no-console
+    });
+};
 
-app.listen(app.get('port'), () => {
-    console.log('Express started on http://localhost:' + app.get('port') + ';'); // eslint-disable-line no-console
-});
+// check to see if module is run directly as node meadowlark.js or is required in another module
+if (require.main === module) {
+    // app is run directly, run server
+    startServer();
+} else {
+    // app is imported from another file via require
+    module.exports = startServer;
+}
