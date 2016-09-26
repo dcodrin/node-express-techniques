@@ -20,6 +20,7 @@ if (cluster.isMaster) {
     // if worker dies, create new worker to replace it
     cluster.on('exit', (worker, code, signal) => {
         console.log(`CLUSTER: Worker ${worker.id} dies with exit code ${code} (${signal})`);
+        startWorker();
     });
 } else {
     // start app on worker

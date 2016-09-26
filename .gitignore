@@ -6,3 +6,7 @@ gen
 
 # node_modules
 node_modules
+data
+
+#credentials
+credentials.js

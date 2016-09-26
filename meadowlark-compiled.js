@@ -34,13 +34,54 @@ var _cluster2 = _interopRequireDefault(_cluster);
 
 var _domain = require('domain');
 
+var _api = require('./api/api');
+
+var _fs = require('fs');
+
+var _fs2 = _interopRequireDefault(_fs);
+
+var _connectMongo = require('connect-mongo');
+
+var _connectMongo2 = _interopRequireDefault(_connectMongo);
+
+var _connection = require('./db/connection');
+
+var _connection2 = _interopRequireDefault(_connection);
+
+var _vacation = require('./db/models/vacation');
+
+var _vacation2 = _interopRequireDefault(_vacation);
+
+var _vacationInSeasonListener = require('./db/models/vacationInSeasonListener');
+
+var _vacationInSeasonListener2 = _interopRequireDefault(_vacationInSeasonListener);
+
+var _dbseed = require('./db/dbseed');
+
+var _dbseed2 = _interopRequireDefault(_dbseed);
+
 var _credentials = require('./credentials');
 
 var _credentials2 = _interopRequireDefault(_credentials);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
+// Check if paths exists if not create them
+var dataDir = __dirname + '/data';
+var vacationPhotoDir = __dirname + '/vacation-photo';
+_fs2.default.existsSync(dataDir) || _fs2.default.mkdirSync(dataDir);
+_fs2.default.existsSync(vacationPhotoDir) || _fs2.default.mkdirSync(vacationPhotoDir);
+
 var app = (0, _express2.default)();
+
+// establish db connection based on environment;
+var mongooseConnection = (0, _connection2.default)(app.get('env'));
+// seed database with data with none present
+(0, _dbseed2.default)();
+
+// set mongo session store through mlab
+
+var MongoStore = (0, _connectMongo2.default)(_expressSession2.default);
 
 // handle uncaught errors
 app.use(function (req, res, next) {
@@ -107,11 +148,6 @@ var helpers = {
         return null;
     }
 };
-//api helpers
-var validateEmail = function validateEmail(email) {
-    var re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    return re.test(email);
-};
 
 //set up handlebars  view engine
 var engine = _expressHandlebars2.default.create({ defaultLayout: 'main', helpers: helpers }).engine;
@@ -135,7 +171,8 @@ app.use((0, _cookieParser2.default)(_credentials2.default.cookieSecret));
 app.use((0, _expressSession2.default)({
     resave: false,
     saveUninitialized: false,
-    secret: _credentials2.default.cookieSecret
+    secret: _credentials2.default.cookieSecret,
+    store: new MongoStore({mongooseConnection: mongooseConnection.connection})
 }));
 
 //test middleware
@@ -189,7 +226,7 @@ app.post('/newsletter', function (req, res) {
     var email = _req$body.email;
     var name = _req$body.name;
 
-    if (!validateEmail(email)) {
+    if (!(0, _api.validateEmail)(email)) {
         if (req.xhr) {
             return res.json({error: 'Invalid email address.'});
         }
@@ -202,9 +239,75 @@ app.post('/newsletter', function (req, res) {
     }
 });
 
+app.get('/vacations', function (req, res) {
+    _vacation2.default.find({available: true}, function (err, vacations) {
+        var context = {
+            currency: req.session.currency || 'USD',
+            vacations: vacations.map(function (vacation) {
+                var sku = vacation.sku;
+                var name = vacation.name;
+                var description = vacation.description;
+                var inSeason = vacation.inSeason;
+                var priceInCents = vacation.priceInCents;
+
+                return {
+                    sku: sku,
+                    name: name,
+                    description: description,
+                    price: vacation.getDisplayPrice((0, _api.convertFromUSD)(priceInCents, req.session.currency)),
+                    inSeason: inSeason
+                };
+            })
+        };
+        switch (req.session.currency) {
+            case 'USD':
+                context.currencyUSD = 'selected';
+                break;
+            case 'GBP':
+                context.currencyGBP = 'selected';
+                break;
+            case 'BTC':
+                context.currencyBTC = 'selected';
+                break;
+            default:
+                context.currencyUSD = 'selected';
+        }
+        res.render('vacations', context);
+    });
+});
+
+app.get('/notify-when-in-season', function (req, res) {
+    res.render('notify-when-in-season', {sku: req.query.sku});
+});
+
+app.post('/notify-when-in-season', function (req, res) {
+    _vacationInSeasonListener2.default.update({email: req.body.email}, {$push: {skus: req.body.sku}}, {upsert: true}, function (err) {
+        if (err) {
+            console.error(err.stack);
+            req.session.flash = {
+                type: 'danger',
+                intro: 'Oops!',
+                message: 'There was an error processing your request.'
+            };
+            res.redirect(303, '/vacations');
+        }
+        req.session.flash = {
+            type: 'success',
+            intro: 'Thank you! ',
+            message: 'You will be notified when this vacation is in season.'
+        };
+        return res.redirect(303, '/vacations');
+    });
+});
+
 app.get('/contest/vacation-photo', function (req, res) {
     var now = new Date();
     res.render('contest/vacation-photo', { year: now.getUTCFullYear(), month: now.getMonth() });
+});
+
+app.get('/set-currency/:currency', function (req, res) {
+    req.session.currency = req.params.currency;
+    res.redirect(303, '/vacations');
 });
 
 app.post('/process', function (req, res) {
@@ -219,13 +322,31 @@ app.post('/contest/vacation-photo/:year/:month', function (req, res) {
     var form = new _formidable2.default.IncomingForm();
     form.parse(req, function (err, fields, files) {
         if (err) {
-            return res.redirect(303, '/error');
+            res.session.flash = {
+                type: 'danger',
+                intro: 'Oops!',
+                message: 'There was an error processing your submission. PLease try again.'
+            };
+            res.redirect(303, '/contest/vacation-photo');
         }
+
+        var photo = files.photo;
+        var dir = vacationPhotoDir + '/' + Date.now();
+        var path = dir + '/' + photo.name;
+        _fs2.default.mkdirSync(dir);
+        _fs2.default.renameSync(photo.path, dir + '/' + photo.name);
+        (0, _api.saveContestEntry)('vacation-photo', fields.email, req.params.year, req.params.month, path);
+        req.session.flash = {
+            type: 'success',
+            intro: 'Good luck!',
+            message: 'You have been entered into the contest.'
+        };
+
         console.log('Received fields:');
         console.log(fields);
         console.log('Received files');
         console.log(files);
-        res.redirect(303, '/thank-you');
+        res.redirect(303, '/contest/vacation-photo/entries');
     });
 });
 

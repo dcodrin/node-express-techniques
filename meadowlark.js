@@ -7,10 +7,35 @@ import expressSession from 'express-session';
 import morgan from 'morgan';
 import cluster from 'cluster';
 import {create} from 'domain';
+import {validateEmail, saveContestEntry, convertFromUSD} from './api/api';
+import fs from 'fs';
+import connectMongo from 'connect-mongo';
+
+import connection from './db/connection';
+import Vacation from './db/models/vacation';
+import VacationInSeasonListener from './db/models/vacationInSeasonListener';
+import seedDatabase from './db/dbseed';
+
+// Check if paths exists if not create them
+const dataDir = __dirname + '/data';
+const vacationPhotoDir = __dirname + '/vacation-photo';
+fs.existsSync(dataDir) || fs.mkdirSync(dataDir);
+fs.existsSync(vacationPhotoDir) || fs.mkdirSync(vacationPhotoDir);
+
 
 import credentials from './credentials';
 
 const app = express();
+
+// establish db connection based on environment;
+const mongooseConnection = connection(app.get('env'));
+// seed database with data with none present
+seedDatabase();
+
+// set mongo session store through mlab
+
+const MongoStore = connectMongo(expressSession);
+
 
 // handle uncaught errors
 app.use((req, res, next) => {
@@ -77,11 +102,6 @@ const helpers = {
         return null;
     }
 };
-//api helpers
-const validateEmail = (email) => {
-    const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    return re.test(email);
-};
 
 //set up handlebars  view engine
 const engine = handlebars.create({defaultLayout: 'main', helpers}).engine;
@@ -105,7 +125,8 @@ app.use(cookieParser(credentials.cookieSecret));
 app.use(expressSession({
     resave: false,
     saveUninitialized: false,
-    secret: credentials.cookieSecret
+    secret: credentials.cookieSecret,
+    store: new MongoStore({mongooseConnection: mongooseConnection.connection})
 }));
 
 //test middleware
@@ -146,7 +167,6 @@ app.get('/tours/oregon-coast', (req, res) => {
     res.render('tours/oregon-coast');
 });
 
-
 app.get('/tours/request-group-rate', (req, res) => {
     res.render('tours/request-group-rate');
 });
@@ -170,9 +190,70 @@ app.post('/newsletter', (req, res) => {
     }
 });
 
+app.get('/vacations', (req, res) => {
+    Vacation.find({available: true}, (err, vacations) => {
+        const context = {
+            currency: req.session.currency || 'USD',
+            vacations: vacations.map(vacation => {
+                let {sku, name, description, inSeason, priceInCents} = vacation;
+                return {
+                    sku,
+                    name,
+                    description,
+                    price: vacation.getDisplayPrice(convertFromUSD(priceInCents, req.session.currency)),
+                    inSeason
+                };
+            })
+        };
+        switch (req.session.currency) {
+            case 'USD':
+                context.currencyUSD = 'selected';
+                break;
+            case  'GBP':
+                context.currencyGBP = 'selected';
+                break;
+            case 'BTC':
+                context.currencyBTC = 'selected';
+                break;
+            default:
+                context.currencyUSD = 'selected';
+        }
+        res.render('vacations', context);
+    });
+});
+
+app.get('/notify-when-in-season', (req, res) => {
+    res.render('notify-when-in-season', {sku: req.query.sku})
+});
+
+app.post('/notify-when-in-season', (req, res) => {
+    VacationInSeasonListener.update({email: req.body.email}, {$push: {skus: req.body.sku}}, {upsert: true}, (err) => {
+        if (err) {
+            console.error(err.stack);
+            req.session.flash = {
+                type: 'danger',
+                intro: 'Oops!',
+                message: 'There was an error processing your request.'
+            };
+            res.redirect(303, '/vacations');
+        }
+        req.session.flash = {
+            type: 'success',
+            intro: 'Thank you! ',
+            message: 'You will be notified when this vacation is in season.'
+        };
+        return res.redirect(303, '/vacations');
+    })
+});
+
 app.get('/contest/vacation-photo', (req, res) => {
     const now = new Date();
     res.render('contest/vacation-photo', {year: now.getUTCFullYear(), month: now.getMonth()});
+});
+
+app.get('/set-currency/:currency', (req, res) => {
+    req.session.currency = req.params.currency;
+    res.redirect(303, '/vacations');
 });
 
 app.post('/process', (req, res) => {
@@ -187,13 +268,31 @@ app.post('/contest/vacation-photo/:year/:month', (req, res) => {
     const form = new formidable.IncomingForm();
     form.parse(req, (err, fields, files) => {
         if (err) {
-            return res.redirect(303, '/error');
+            res.session.flash = {
+                type: 'danger',
+                intro: 'Oops!',
+                message: 'There was an error processing your submission. PLease try again.'
+            };
+            res.redirect(303, '/contest/vacation-photo');
         }
+
+        const photo = files.photo;
+        const dir = vacationPhotoDir + '/' + Date.now();
+        const path = dir + '/' + photo.name;
+        fs.mkdirSync(dir);
+        fs.renameSync(photo.path, dir + '/' + photo.name);
+        saveContestEntry('vacation-photo', fields.email, req.params.year, req.params.month, path);
+        req.session.flash = {
+            type: 'success',
+            intro: 'Good luck!',
+            message: 'You have been entered into the contest.'
+        };
+
         console.log('Received fields:');
         console.log(fields);
         console.log('Received files');
         console.log(files);
-        res.redirect(303, '/thank-you');
+        res.redirect(303, '/contest/vacation-photo/entries');
     })
 });
 
