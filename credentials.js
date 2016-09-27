@@ -1,3 +1,4 @@
+//NOTE: In a real app this file should always be ignored.
 module.exports = {
     cookieSecret: 'do you believe in miracles you sexy thing?',
     mongo: {

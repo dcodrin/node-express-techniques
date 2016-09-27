@@ -12,10 +12,6 @@ var _bodyParser = require('body-parser');
 
 var _bodyParser2 = _interopRequireDefault(_bodyParser);
 
-var _formidable = require('formidable');
-
-var _formidable2 = _interopRequireDefault(_formidable);
-
 var _cookieParser = require('cookie-parser');
 
 var _cookieParser2 = _interopRequireDefault(_cookieParser);
@@ -34,12 +30,6 @@ var _cluster2 = _interopRequireDefault(_cluster);
 
 var _domain = require('domain');
 
-var _api = require('./api/api');
-
-var _fs = require('fs');
-
-var _fs2 = _interopRequireDefault(_fs);
-
 var _connectMongo = require('connect-mongo');
 
 var _connectMongo2 = _interopRequireDefault(_connectMongo);
@@ -48,29 +38,19 @@ var _connection = require('./db/connection');
 
 var _connection2 = _interopRequireDefault(_connection);
 
-var _vacation = require('./db/models/vacation');
-
-var _vacation2 = _interopRequireDefault(_vacation);
-
-var _vacationInSeasonListener = require('./db/models/vacationInSeasonListener');
-
-var _vacationInSeasonListener2 = _interopRequireDefault(_vacationInSeasonListener);
-
 var _dbseed = require('./db/dbseed');
 
 var _dbseed2 = _interopRequireDefault(_dbseed);
+
+var _routes = require('./routes');
+
+var _routes2 = _interopRequireDefault(_routes);
 
 var _credentials = require('./credentials');
 
 var _credentials2 = _interopRequireDefault(_credentials);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-// Check if paths exists if not create them
-var dataDir = __dirname + '/data';
-var vacationPhotoDir = __dirname + '/vacation-photo';
-_fs2.default.existsSync(dataDir) || _fs2.default.mkdirSync(dataDir);
-_fs2.default.existsSync(vacationPhotoDir) || _fs2.default.mkdirSync(vacationPhotoDir);
 
 var app = (0, _express2.default)();
 
@@ -172,7 +152,7 @@ app.use((0, _expressSession2.default)({
     resave: false,
     saveUninitialized: false,
     secret: _credentials2.default.cookieSecret,
-    store: new MongoStore({mongooseConnection: mongooseConnection.connection})
+    store: new MongoStore({ mongooseConnection: mongooseConnection.connection })
 }));
 
 //test middleware
@@ -192,167 +172,8 @@ app.use(function (req, res, next) {
 
 app.use((0, _morgan2.default)('dev'));
 
-app.get('/', function (req, res) {
-    res.render('home');
-});
-
-app.get('/about', function (req, res) {
-
-    // Use to test domain uncaught error handling
-    // setImmediate(() => {
-    //     throw new Error('KABOOM!')
-    // });
-    res.render('about', { pageTestScript: '/qa/tests-about.js' });
-});
-
-app.get('/tours/hood-river', function (req, res) {
-    res.render('tours/hood-river');
-});
-
-app.get('/tours/oregon-coast', function (req, res) {
-    res.render('tours/oregon-coast');
-});
-
-app.get('/tours/request-group-rate', function (req, res) {
-    res.render('tours/request-group-rate');
-});
-
-app.get('/newsletter', function (req, res) {
-    res.render('newsletter', { csrf: 'CSRF token goes here' });
-});
-
-app.post('/newsletter', function (req, res) {
-    var _req$body = req.body;
-    var email = _req$body.email;
-    var name = _req$body.name;
-
-    if (!(0, _api.validateEmail)(email)) {
-        if (req.xhr) {
-            return res.json({error: 'Invalid email address.'});
-        }
-        req.session.flash = {
-            type: 'danger',
-            intro: 'Validation error!',
-            message: 'The email address entered was not valid'
-        };
-        return res.redirect(303, '/newsletter/archive');
-    }
-});
-
-app.get('/vacations', function (req, res) {
-    _vacation2.default.find({available: true}, function (err, vacations) {
-        var context = {
-            currency: req.session.currency || 'USD',
-            vacations: vacations.map(function (vacation) {
-                var sku = vacation.sku;
-                var name = vacation.name;
-                var description = vacation.description;
-                var inSeason = vacation.inSeason;
-                var priceInCents = vacation.priceInCents;
-
-                return {
-                    sku: sku,
-                    name: name,
-                    description: description,
-                    price: vacation.getDisplayPrice((0, _api.convertFromUSD)(priceInCents, req.session.currency)),
-                    inSeason: inSeason
-                };
-            })
-        };
-        switch (req.session.currency) {
-            case 'USD':
-                context.currencyUSD = 'selected';
-                break;
-            case 'GBP':
-                context.currencyGBP = 'selected';
-                break;
-            case 'BTC':
-                context.currencyBTC = 'selected';
-                break;
-            default:
-                context.currencyUSD = 'selected';
-        }
-        res.render('vacations', context);
-    });
-});
-
-app.get('/notify-when-in-season', function (req, res) {
-    res.render('notify-when-in-season', {sku: req.query.sku});
-});
-
-app.post('/notify-when-in-season', function (req, res) {
-    _vacationInSeasonListener2.default.update({email: req.body.email}, {$push: {skus: req.body.sku}}, {upsert: true}, function (err) {
-        if (err) {
-            console.error(err.stack);
-            req.session.flash = {
-                type: 'danger',
-                intro: 'Oops!',
-                message: 'There was an error processing your request.'
-            };
-            res.redirect(303, '/vacations');
-        }
-        req.session.flash = {
-            type: 'success',
-            intro: 'Thank you! ',
-            message: 'You will be notified when this vacation is in season.'
-        };
-        return res.redirect(303, '/vacations');
-    });
-});
-
-app.get('/contest/vacation-photo', function (req, res) {
-    var now = new Date();
-    res.render('contest/vacation-photo', { year: now.getUTCFullYear(), month: now.getMonth() });
-});
-
-app.get('/set-currency/:currency', function (req, res) {
-    req.session.currency = req.params.currency;
-    res.redirect(303, '/vacations');
-});
-
-app.post('/process', function (req, res) {
-    if (req.xhr || req.accepts('json/html') === 'json') {
-        res.send({ success: true });
-    } else {
-        res.redirect(303, '/thank-you');
-    }
-});
-
-app.post('/contest/vacation-photo/:year/:month', function (req, res) {
-    var form = new _formidable2.default.IncomingForm();
-    form.parse(req, function (err, fields, files) {
-        if (err) {
-            res.session.flash = {
-                type: 'danger',
-                intro: 'Oops!',
-                message: 'There was an error processing your submission. PLease try again.'
-            };
-            res.redirect(303, '/contest/vacation-photo');
-        }
-
-        var photo = files.photo;
-        var dir = vacationPhotoDir + '/' + Date.now();
-        var path = dir + '/' + photo.name;
-        _fs2.default.mkdirSync(dir);
-        _fs2.default.renameSync(photo.path, dir + '/' + photo.name);
-        (0, _api.saveContestEntry)('vacation-photo', fields.email, req.params.year, req.params.month, path);
-        req.session.flash = {
-            type: 'success',
-            intro: 'Good luck!',
-            message: 'You have been entered into the contest.'
-        };
-
-        console.log('Received fields:');
-        console.log(fields);
-        console.log('Received files');
-        console.log(files);
-        res.redirect(303, '/contest/vacation-photo/entries');
-    });
-});
-
-app.get('/thank-you', function (req, res) {
-    res.render('thankyou');
-});
+//handle routes
+(0, _routes2.default)(app);
 
 //custom 404 page
 //404 responses are not the result of an error, error-handler middleware will not capture them

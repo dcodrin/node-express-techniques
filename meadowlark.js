@@ -1,28 +1,16 @@
 import express from 'express';
 import handlebars from'express-handlebars';
 import bodyParser from 'body-parser';
-import formidable from 'formidable';
 import cookieParser from 'cookie-parser';
 import expressSession from 'express-session';
 import morgan from 'morgan';
 import cluster from 'cluster';
 import {create} from 'domain';
-import {validateEmail, saveContestEntry, convertFromUSD} from './api/api';
-import fs from 'fs';
 import connectMongo from 'connect-mongo';
 
 import connection from './db/connection';
-import Vacation from './db/models/vacation';
-import VacationInSeasonListener from './db/models/vacationInSeasonListener';
 import seedDatabase from './db/dbseed';
-
-// Check if paths exists if not create them
-const dataDir = __dirname + '/data';
-const vacationPhotoDir = __dirname + '/vacation-photo';
-fs.existsSync(dataDir) || fs.mkdirSync(dataDir);
-fs.existsSync(vacationPhotoDir) || fs.mkdirSync(vacationPhotoDir);
-
-
+import routes from './routes';
 import credentials from './credentials';
 
 const app = express();
@@ -35,7 +23,6 @@ seedDatabase();
 // set mongo session store through mlab
 
 const MongoStore = connectMongo(expressSession);
-
 
 // handle uncaught errors
 app.use((req, res, next) => {
@@ -146,160 +133,8 @@ app.use((req, res, next) => {
 
 app.use(morgan('dev'));
 
-app.get('/', (req, res) => {
-    res.render('home');
-});
-
-app.get('/about', (req, res) => {
-
-    // Use to test domain uncaught error handling
-    // setImmediate(() => {
-    //     throw new Error('KABOOM!')
-    // });
-    res.render('about', {pageTestScript: '/qa/tests-about.js'});
-});
-
-app.get('/tours/hood-river', (req, res) => {
-    res.render('tours/hood-river');
-});
-
-app.get('/tours/oregon-coast', (req, res) => {
-    res.render('tours/oregon-coast');
-});
-
-app.get('/tours/request-group-rate', (req, res) => {
-    res.render('tours/request-group-rate');
-});
-
-app.get('/newsletter', (req, res) => {
-    res.render('newsletter', {csrf: 'CSRF token goes here'});
-});
-
-app.post('/newsletter', (req, res) => {
-    const {email, name} = req.body;
-    if (!validateEmail(email)) {
-        if (req.xhr) {
-            return res.json({error: 'Invalid email address.'});
-        }
-        req.session.flash = {
-            type: 'danger',
-            intro: 'Validation error!',
-            message: 'The email address entered was not valid'
-        };
-        return res.redirect(303, '/newsletter/archive');
-    }
-});
-
-app.get('/vacations', (req, res) => {
-    Vacation.find({available: true}, (err, vacations) => {
-        const context = {
-            currency: req.session.currency || 'USD',
-            vacations: vacations.map(vacation => {
-                let {sku, name, description, inSeason, priceInCents} = vacation;
-                return {
-                    sku,
-                    name,
-                    description,
-                    price: vacation.getDisplayPrice(convertFromUSD(priceInCents, req.session.currency)),
-                    inSeason
-                };
-            })
-        };
-        switch (req.session.currency) {
-            case 'USD':
-                context.currencyUSD = 'selected';
-                break;
-            case  'GBP':
-                context.currencyGBP = 'selected';
-                break;
-            case 'BTC':
-                context.currencyBTC = 'selected';
-                break;
-            default:
-                context.currencyUSD = 'selected';
-        }
-        res.render('vacations', context);
-    });
-});
-
-app.get('/notify-when-in-season', (req, res) => {
-    res.render('notify-when-in-season', {sku: req.query.sku})
-});
-
-app.post('/notify-when-in-season', (req, res) => {
-    VacationInSeasonListener.update({email: req.body.email}, {$push: {skus: req.body.sku}}, {upsert: true}, (err) => {
-        if (err) {
-            console.error(err.stack);
-            req.session.flash = {
-                type: 'danger',
-                intro: 'Oops!',
-                message: 'There was an error processing your request.'
-            };
-            res.redirect(303, '/vacations');
-        }
-        req.session.flash = {
-            type: 'success',
-            intro: 'Thank you! ',
-            message: 'You will be notified when this vacation is in season.'
-        };
-        return res.redirect(303, '/vacations');
-    })
-});
-
-app.get('/contest/vacation-photo', (req, res) => {
-    const now = new Date();
-    res.render('contest/vacation-photo', {year: now.getUTCFullYear(), month: now.getMonth()});
-});
-
-app.get('/set-currency/:currency', (req, res) => {
-    req.session.currency = req.params.currency;
-    res.redirect(303, '/vacations');
-});
-
-app.post('/process', (req, res) => {
-    if (req.xhr || req.accepts('json/html') === 'json') {
-        res.send({success: true})
-    } else {
-        res.redirect(303, '/thank-you')
-    }
-});
-
-app.post('/contest/vacation-photo/:year/:month', (req, res) => {
-    const form = new formidable.IncomingForm();
-    form.parse(req, (err, fields, files) => {
-        if (err) {
-            res.session.flash = {
-                type: 'danger',
-                intro: 'Oops!',
-                message: 'There was an error processing your submission. PLease try again.'
-            };
-            res.redirect(303, '/contest/vacation-photo');
-        }
-
-        const photo = files.photo;
-        const dir = vacationPhotoDir + '/' + Date.now();
-        const path = dir + '/' + photo.name;
-        fs.mkdirSync(dir);
-        fs.renameSync(photo.path, dir + '/' + photo.name);
-        saveContestEntry('vacation-photo', fields.email, req.params.year, req.params.month, path);
-        req.session.flash = {
-            type: 'success',
-            intro: 'Good luck!',
-            message: 'You have been entered into the contest.'
-        };
-
-        console.log('Received fields:');
-        console.log(fields);
-        console.log('Received files');
-        console.log(files);
-        res.redirect(303, '/contest/vacation-photo/entries');
-    })
-});
-
-
-app.get('/thank-you', (req, res) => {
-    res.render('thankyou');
-});
+//handle routes
+routes(app);
 
 //custom 404 page
 //404 responses are not the result of an error, error-handler middleware will not capture them
