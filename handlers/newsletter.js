@@ -2,7 +2,7 @@ var {validateEmail} = require('../api/api');
 
 module.exports = {
     getNewsletter: function (req, res) {
-        res.render('newsletter', {csrf: 'CSRF token goes here'});
+        res.render('newsletter', {csrf: 'CSRF token goes here', active: {newsletter: true}});
     },
     postNewsletter: function (req, res) {
         const {email, name} = req.body;

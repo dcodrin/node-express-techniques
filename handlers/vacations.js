@@ -8,6 +8,7 @@ module.exports = {
     getVacations: function (req, res) {
         Vacation.find({available: true}, (err, vacations) => {
             const context = {
+                active: {vacations: true},
                 currency: req.session.currency || 'USD',
                 vacations: vacations.map(vacation => {
                     let {sku, name, description, inSeason, priceInCents} = vacation;
