@@ -34,6 +34,10 @@ var _connectMongo = require('connect-mongo');
 
 var _connectMongo2 = _interopRequireDefault(_connectMongo);
 
+var _cors = require('cors');
+
+var _cors2 = _interopRequireDefault(_cors);
+
 var _connection = require('./db/connection');
 
 var _connection2 = _interopRequireDefault(_connection);
@@ -45,6 +49,10 @@ var _dbseed2 = _interopRequireDefault(_dbseed);
 var _routes = require('./routes');
 
 var _routes2 = _interopRequireDefault(_routes);
+
+var _endpoints = require('./rest-api/endpoints');
+
+var _endpoints2 = _interopRequireDefault(_endpoints);
 
 var _credentials = require('./credentials');
 
@@ -172,8 +180,14 @@ app.use(function (req, res, next) {
 
 app.use((0, _morgan2.default)('dev'));
 
+//cors for api only
+app.use('/api', (0, _cors2.default)());
+
 //handle routes
 (0, _routes2.default)(app);
+
+//handle rest endpoints
+(0, _endpoints2.default)(app);
 
 //custom 404 page
 //404 responses are not the result of an error, error-handler middleware will not capture them

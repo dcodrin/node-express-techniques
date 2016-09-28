@@ -7,10 +7,12 @@ import morgan from 'morgan';
 import cluster from 'cluster';
 import {create} from 'domain';
 import connectMongo from 'connect-mongo';
+import cors from 'cors';
 
 import connection from './db/connection';
 import seedDatabase from './db/dbseed';
 import routes from './routes';
+import endpoints from './rest-api/endpoints';
 import credentials from './credentials';
 
 const app = express();
@@ -133,8 +135,14 @@ app.use((req, res, next) => {
 
 app.use(morgan('dev'));
 
+//cors for api only
+app.use('/api', cors());
+
 //handle routes
 routes(app);
+
+//handle rest endpoints
+endpoints(app);
 
 //custom 404 page
 //404 responses are not the result of an error, error-handler middleware will not capture them
